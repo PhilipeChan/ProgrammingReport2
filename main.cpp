@@ -5,8 +5,7 @@
 #include <algorithm>
 #include <chrono>
 #include <thread>
-#include <future>
-#include <queue>
+
 
 using namespace std;
 
@@ -35,8 +34,8 @@ s     : int         - start index of merge
 e     : int         - end index (inclusive) of merge
 */
 void merge(vector<int> &array, int s, int e);
-void concurrent_merge_sort_worker(vector<int> &array, const vector<ii> &intervals, vector<mutex> &locks);
-void concurrent_merge_sort(vector<int> &array, const vector<ii> &intervals, vector<mutex> &locks);
+void concurrent_merge_sort(vector<int> &array, int threadCount);
+void sort_subarray(vector<int> &array, int start, int end);
 
 int main()
 {
@@ -65,11 +64,9 @@ int main()
     // start timer
     auto start = chrono::high_resolution_clock::now();
 
-    vector<mutex> locks(N);
-
     if (threadCount > 1)
     {
-        concurrent_merge_sort(array, intervals, locks);
+        concurrent_merge_sort(array, threadCount);
     }
     else
     {
@@ -164,28 +161,36 @@ void merge(vector<int> &array, int s, int e)
     }
 }
 
-/**This version uses a locks vector to manage locks for each element of the array. The concurrent_merge_sort_worker function locks 
- * the necessary elements before merging and unlocks them afterward. The locks are managed in a way to ensure that each interval 
- * is only merged once its two halves are already merged.**/
-void concurrent_merge_sort_worker(vector<int> &array, const vector<ii> &intervals, vector<mutex> &locks)
-{
-    for (const auto &interval : intervals)
-    {
-        for (int i = interval.first; i <= interval.second; ++i)
-        {
-            locks[i].lock();
-        }
-
-        merge(array, interval.first, interval.second);
-
-        for (int i = interval.first; i <= interval.second; ++i)
-        {
-            locks[i].unlock();
-        }
-    }
+void sort_subarray(vector<int> &array, int start, int end) {
+    sort(array.begin() + start, array.begin() + end + 1);
 }
 
-void concurrent_merge_sort(vector<int> &array, const vector<ii> &intervals, vector<mutex> &locks)
-{
-    concurrent_merge_sort_worker(array, intervals, locks);
+void concurrent_merge_sort(vector<int> &array, int threadCount) {
+    int N = array.size();
+    vector<thread> threads;
+    int chunkSize = N / threadCount; // Determine the size of each chunk
+
+    // Phase 1: Sort each chunk in parallel
+    for (int i = 0; i < threadCount; ++i) {
+        int start = i * chunkSize;
+        int end = (i == threadCount - 1) ? N - 1 : start + chunkSize - 1; // Ensure the last chunk includes the remainder
+        threads.emplace_back(sort_subarray, ref(array), start, end);
+    }
+
+    for (auto &t : threads) {
+        if (t.joinable()) {
+            t.join();
+        }
+    }
+
+    // Phase 2: Sequentially merge the sorted chunks
+    for (int size = chunkSize; size < N; size *= 2) {
+        for (int leftStart = 0; leftStart < N; leftStart += 2 * size) {
+            int mid = leftStart + size - 1;
+            int rightEnd = min(leftStart + 2 * size - 1, N - 1);
+            if (mid < rightEnd) { // Check if there is anything to merge
+                merge(array, leftStart, rightEnd);
+            }
+        }
+    }
 }
