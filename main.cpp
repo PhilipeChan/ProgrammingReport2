@@ -34,8 +34,8 @@ s     : int         - start index of merge
 e     : int         - end index (inclusive) of merge
 */
 void merge(vector<int> &array, int s, int e);
-void concurrent_merge_sort(vector<int> &array, int threadCount);
-void sort_subarray(vector<int> &array, int start, int end);
+void concurrent_merge_sort(vector<int> &array, const vector<ii> &intervals, int threadCount);
+void concurrent_merge_sort_worker(vector<int> &array, const vector<ii> &intervals);
 
 int main()
 {
@@ -66,7 +66,7 @@ int main()
 
     if (threadCount > 1)
     {
-        concurrent_merge_sort(array, threadCount);
+        concurrent_merge_sort(array, intervals, threadCount);
     }
     else
     {
@@ -161,20 +161,26 @@ void merge(vector<int> &array, int s, int e)
     }
 }
 
-void sort_subarray(vector<int> &array, int start, int end) {
-    sort(array.begin() + start, array.begin() + end + 1);
+void concurrent_merge_sort_worker(vector<int> &array, const vector<ii> &intervals) {
+    for (const auto &interval : intervals) {
+        merge(array, interval.first, interval.second);
+    }
 }
 
-void concurrent_merge_sort(vector<int> &array, int threadCount) {
+void concurrent_merge_sort(vector<int> &array, const vector<ii> &intervals, int threadCount) {
     int N = array.size();
     vector<thread> threads;
-    int chunkSize = N / threadCount; // Determine the size of each chunk
 
-    // Phase 1: Sort each chunk in parallel
+    int intervalsPerThread = intervals.size() / threadCount;
+
+    // Create threads and distribute intervals among them
     for (int i = 0; i < threadCount; ++i) {
-        int start = i * chunkSize;
-        int end = (i == threadCount - 1) ? N - 1 : start + chunkSize - 1; // Ensure the last chunk includes the remainder
-        threads.emplace_back(sort_subarray, ref(array), start, end);
+        int startIdx = i * intervalsPerThread;
+        int endIdx = (i == threadCount - 1) ? intervals.size() - 1 : startIdx + intervalsPerThread - 1;
+
+        vector<ii> threadIntervals(intervals.begin() + startIdx, intervals.begin() + endIdx + 1);
+
+        threads.emplace_back(concurrent_merge_sort_worker, ref(array), threadIntervals);
     }
 
     for (auto &t : threads) {
@@ -184,7 +190,7 @@ void concurrent_merge_sort(vector<int> &array, int threadCount) {
     }
 
     // Phase 2: Sequentially merge the sorted chunks
-    for (int size = chunkSize; size < N; size *= 2) {
+    for (int size = 1; size < N; size *= 2) {
         for (int leftStart = 0; leftStart < N; leftStart += 2 * size) {
             int mid = leftStart + size - 1;
             int rightEnd = min(leftStart + 2 * size - 1, N - 1);
