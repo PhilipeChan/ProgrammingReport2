@@ -6,6 +6,7 @@
 #include <chrono>
 #include <thread>
 #include <future>
+#include <queue>
 
 using namespace std;
 
@@ -33,9 +34,12 @@ array : vector<int> - array to sort
 s     : int         - start index of merge
 e     : int         - end index (inclusive) of merge
 */
-void merge(vector<int> &array, int s, int e);
+void merge(vector<int> &array, int s, int e, vector<mutex> &locks);
 
-void concurrent_merge_sort(vector<int> &array, const vector<ii> &intervals, int threadCount);
+void concurrent_merge_sort(vector<int> &array, const vector<ii> &intervals, int threadCount, vector<mutex> &locks);
+
+mutex queueMutex;
+mutex mergeMutex;
 
 int main()
 {
@@ -64,19 +68,20 @@ int main()
     // start timer
     auto start = chrono::high_resolution_clock::now();
 
-    // perform single-threaded or concurrent merge sort based on thread count
+    vector<mutex> locks(N);
+
     if (threadCount > 1)
     {
-        concurrent_merge_sort(array, intervals, threadCount);
+        concurrent_merge_sort(array, intervals, threadCount, locks);
     }
     else
     {
         for (const auto &interval : intervals)
         {
-            merge(array, interval.first, interval.second);
+            merge(array, interval.first, interval.second, locks);
         }
     }
-
+    
     // end timer
     auto end = chrono::high_resolution_clock::now();
     chrono::duration<double> elapsed = end - start;
@@ -129,7 +134,7 @@ vector<ii> generate_intervals(int start, int end)
     return retval;
 }
 
-void merge(vector<int> &array, int s, int e)
+void merge(vector<int> &array, int s, int e, vector<mutex> &locks)
 {
     int m = s + (e - s) / 2;
     vector<int> left;
@@ -160,9 +165,33 @@ void merge(vector<int> &array, int s, int e)
             r_ptr++;
         }
     }
+
+    // Unlock the interval after the merge
+    for (int i = s; i <= e; i++)
+    {
+        locks[i].unlock();
+    }
 }
 
-void concurrent_merge_sort(vector<int> &array, const vector<ii> &intervals, int threadCount)
+void concurrent_merge_sort(vector<int> &array, const vector<ii> &intervals, int threadCount, vector<mutex> &locks)
 {
-    // not yet implemented
+    auto worker = [&](const ii &interval) {
+        for (int i = interval.first; i <= interval.second; i++)
+        {
+            locks[i].lock();
+        }
+        merge(array, interval.first, interval.second, locks);
+    };
+
+    vector<thread> threads;
+
+    for (const auto &interval : intervals)
+    {
+        threads.emplace_back(worker, interval);
+    }
+
+    for (auto &t : threads)
+    {
+        t.join();
+    }
 }
