@@ -34,12 +34,9 @@ array : vector<int> - array to sort
 s     : int         - start index of merge
 e     : int         - end index (inclusive) of merge
 */
-void merge(vector<int> &array, int s, int e, vector<mutex> &locks);
-
-void concurrent_merge_sort(vector<int> &array, const vector<ii> &intervals, int threadCount, vector<mutex> &locks);
-
-mutex queueMutex;
-mutex mergeMutex;
+void merge(vector<int> &array, int s, int e);
+void concurrent_merge_sort_worker(vector<int> &array, const vector<ii> &intervals, vector<mutex> &locks);
+void concurrent_merge_sort(vector<int> &array, const vector<ii> &intervals, vector<mutex> &locks);
 
 int main()
 {
@@ -72,13 +69,13 @@ int main()
 
     if (threadCount > 1)
     {
-        concurrent_merge_sort(array, intervals, threadCount, locks);
+        concurrent_merge_sort(array, intervals, locks);
     }
     else
     {
         for (const auto &interval : intervals)
         {
-            merge(array, interval.first, interval.second, locks);
+            merge(array, interval.first, interval.second);
         }
     }
     
@@ -134,7 +131,7 @@ vector<ii> generate_intervals(int start, int end)
     return retval;
 }
 
-void merge(vector<int> &array, int s, int e, vector<mutex> &locks)
+void merge(vector<int> &array, int s, int e)
 {
     int m = s + (e - s) / 2;
     vector<int> left;
@@ -165,33 +162,30 @@ void merge(vector<int> &array, int s, int e, vector<mutex> &locks)
             r_ptr++;
         }
     }
-
-    // Unlock the interval after the merge
-    for (int i = s; i <= e; i++)
-    {
-        locks[i].unlock();
-    }
 }
 
-void concurrent_merge_sort(vector<int> &array, const vector<ii> &intervals, int threadCount, vector<mutex> &locks)
+/**This version uses a locks vector to manage locks for each element of the array. The concurrent_merge_sort_worker function locks 
+ * the necessary elements before merging and unlocks them afterward. The locks are managed in a way to ensure that each interval 
+ * is only merged once its two halves are already merged.**/
+void concurrent_merge_sort_worker(vector<int> &array, const vector<ii> &intervals, vector<mutex> &locks)
 {
-    auto worker = [&](const ii &interval) {
-        for (int i = interval.first; i <= interval.second; i++)
+    for (const auto &interval : intervals)
+    {
+        for (int i = interval.first; i <= interval.second; ++i)
         {
             locks[i].lock();
         }
-        merge(array, interval.first, interval.second, locks);
-    };
 
-    vector<thread> threads;
+        merge(array, interval.first, interval.second);
 
-    for (const auto &interval : intervals)
-    {
-        threads.emplace_back(worker, interval);
+        for (int i = interval.first; i <= interval.second; ++i)
+        {
+            locks[i].unlock();
+        }
     }
+}
 
-    for (auto &t : threads)
-    {
-        t.join();
-    }
+void concurrent_merge_sort(vector<int> &array, const vector<ii> &intervals, vector<mutex> &locks)
+{
+    concurrent_merge_sort_worker(array, intervals, locks);
 }
